@@ -45,6 +45,9 @@ models/
 artifacts/
 checkpoints/
 
+# OSMnx response cache (downloaded Overpass payloads)
+cache/
+
 # Logs
 *.log
 logs/
