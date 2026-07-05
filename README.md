@@ -86,13 +86,19 @@ pytest
 Once the stages are implemented:
 
 ```bash
-python -m paveiq.data_ingestion.fetch_osm
+# Stage 1: fetch OSM footpath data (network access required).
+# OSMnx is an optional dep; install it first:  pip install -e ".[osm]"
+python -m paveiq.data_ingestion.osm_loader --place "Bengaluru, India"
+# ...or a small bbox for a fast first run:
+python -m paveiq.data_ingestion.osm_loader --bbox 12.93 77.55 12.99 77.65
+
+# Stages 2-4 (not yet implemented):
 python -m paveiq.features.build_features
 python -m paveiq.models.train
 python -m paveiq.scoring.score_city
 ```
 
-Outputs land in `data/processed/`.
+`data/raw/` gets the OSM GeoJSON; the rest of the pipeline writes to `data/processed/`.
 
 ## Data sources (planned)
 

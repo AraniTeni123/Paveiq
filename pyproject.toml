@@ -16,3 +16,10 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+
+[project.optional-dependencies]
+osm = ["osmnx>=2.0"]
+
+[dependency-groups]
+osm = ["osmnx>=2.0"]
+dev = ["pytest>=7.4.0", "pytest-cov>=4.1.0"]

@@ -37,3 +37,9 @@ ipykernel>=6.25.0
 # Testing
 pytest>=7.4.0
 pytest-cov>=4.1.0
+
+# Optional: OSM (heavy; pulls networkx + requests).
+# Not needed for the base pipeline — only the OSM loader.
+# Install with:  pip install osmnx>=2.0
+# or:            pip install -e ".[osm]"
+# osmnx>=2.0
