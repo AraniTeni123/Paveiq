@@ -1,3 +1,9 @@
+# Install our own package in editable mode. Needed because Streamlit Cloud
+# only runs `pip install -r requirements.txt` — it doesn't separately run
+# `pip install -e .` the way local dev setup does — so without this line
+# `import paveiq` fails on Streamlit Cloud even though it works locally.
+-e .
+
 # Geospatial core
 geopandas>=0.14.0
 shapely>=2.0.0
@@ -44,8 +50,10 @@ pytest-cov>=4.1.0
 # or:            pip install -e ".[osm]"
 # osmnx>=2.0
 
-# Optional: dashboard (pulls in a web-app framework and a WebGL map layer).
-# Not needed for the base pipeline — only the Streamlit dashboard.
-# Install with:  pip install -e ".[dashboard]"
-# streamlit>=1.38.0
-# pydeck>=0.9.0
+# Dashboard (web-app framework + WebGL map layer). Kept active here
+# (not commented out like the osm extra below) because Streamlit Cloud
+# only runs `pip install -r requirements.txt` — it never runs
+# `pip install -e ".[dashboard]"`, so an extra-only pydeck/streamlit
+# would leave the deployed app unable to import them.
+streamlit>=1.38.0
+pydeck>=0.9.0
