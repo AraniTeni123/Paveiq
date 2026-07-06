@@ -176,25 +176,68 @@ def _fetch_features(polygon: Polygon) -> gpd.GeoDataFrame:
     return ox.features.features_from_polygon(polygon, tags=_tags_of_interest())
 
 
+def _extract_osm_ids(gdf: gpd.GeoDataFrame) -> pd.Series:
+    """Recover the OSM IDs that OSMnx stashes in the index.
+
+    OSMnx 2.x returns features as a GeoDataFrame whose index carries
+    the OSM element type and id (a MultiIndex ``('element', 'id')``
+    in newer versions, or a single ``id`` index in older ones). The
+    id is also mirrored in a top-level ``osmid`` column on some
+    versions. We try those sources in order and fall back to NaN.
+    """
+    import pandas as pd  # local import; only used here
+
+    # 1. Top-level ``osmid`` column (OSMnx < 2.0, or features that
+    #    expose it explicitly).
+    if "osmid" in gdf.columns:
+        return gdf["osmid"]
+
+    # 2. MultiIndex like ('element', 'id').
+    if isinstance(gdf.index, pd.MultiIndex) and "id" in gdf.index.names:
+        return pd.Series(gdf.index.get_level_values("id"), index=gdf.index)
+
+    # 3. Single-level index named 'id' or 'osmid'.
+    name = gdf.index.name
+    if name in ("id", "osmid"):
+        return pd.Series(gdf.index, index=gdf.index)
+
+    # 4. No recoverable id; return all-NaN of the right length.
+    return pd.Series([None] * len(gdf), index=gdf.index)
+
+
 def _filter_to_ways(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     """Drop nodes/relations; we only want ways (LineString / MultiLineString).
 
     OSMnx returns a mix of geometries tagged with the
     ``element_type`` column. We only want ways for network scoring.
+
+    Also lifts the OSM id from the index into a real ``osmid``
+    column (so it survives a round-trip through ``to_file``) and
+    drops the redundant ``element_type`` column. The index is
+    reset to a plain ``RangeIndex`` so downstream code can rely
+    on integer positions.
     """
-    if "element_type" not in gdf.columns:
+    osmid_series = _extract_osm_ids(gdf)
+
+    if "element_type" in gdf.columns:
+        ways = gdf.loc[gdf["element_type"] == "way"].copy()
+    else:
         # Older OSMnx versions: filter on geometry type instead.
-        return gdf.loc[
+        ways = gdf.loc[
             gdf.geometry.geom_type.isin(("LineString", "MultiLineString"))
         ].copy()
 
-    ways = gdf.loc[gdf["element_type"] == "way"].copy()
     if ways.empty:
-        # Fall back to the geometry-type filter if the column is
+        # Fall back to the geometry-type filter if the column was
         # somehow present but empty after filtering.
-        return gdf.loc[
+        ways = gdf.loc[
             gdf.geometry.geom_type.isin(("LineString", "MultiLineString"))
         ].copy()
+
+    ways = ways.assign(osmid=osmid_series.loc[ways.index].values)
+    if "element_type" in ways.columns:
+        ways = ways.drop(columns=["element_type"])
+    ways = ways.reset_index(drop=True)
     return ways
 
 
