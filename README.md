@@ -92,18 +92,27 @@ python -m paveiq.data_ingestion.osm_loader --place "Bengaluru, India"
 # ...or a small bbox for a fast first run:
 python -m paveiq.data_ingestion.osm_loader --bbox 12.93 77.55 12.99 77.65
 
-# Stages 2-4 (not yet implemented):
+# Stage 2: per-segment features.
 python -m paveiq.features.build_features
+
+# Stage 3: spatial-join to BBMP wards (downloads the
+# DataMeet 2022 ward GeoJSON on first run, then caches it).
+python -m paveiq.data_ingestion.ward_boundaries
+
+# Stages 4-6 (not yet implemented):
 python -m paveiq.models.train
 python -m paveiq.scoring.score_city
 ```
 
-`data/raw/` gets the OSM GeoJSON; the rest of the pipeline writes to `data/processed/`.
+`data/raw/` gets the OSM GeoJSON and the cached BBMP wards; `data/processed/` gets the per-segment feature Parquet and the `*_with_wards.parquet`.
 
 ## Data sources (planned)
 
 - **OpenStreetMap** — footpath geometries, surface tags, width, accessibility tags.
-- **BBMP ward boundaries** — administrative overlay.
+- **BBMP ward boundaries** — administrative overlay. Sourced from
+  [DataMeet / Municipal_Spatial_Data](https://github.com/datameet/Municipal_Spatial_Data/tree/master/Bangalore)
+  (CC-BY-SA 2.5 India), 2022 delimitation (243 wards). Cached
+  locally at `data/raw/bbmp_wards_2022.geojson` on first run.
 - **Sentinel-2 / Landsat rasters** — vegetation, built-up fraction.
 - **Bengawalk citizen reports** — ground-truth footpath condition labels.
 
