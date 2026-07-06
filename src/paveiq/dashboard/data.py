@@ -14,23 +14,42 @@ from typing import Optional
 import geopandas as gpd
 import pandas as pd
 
-from paveiq.config import PROCESSED_DATA_DIR
+from paveiq.config import PROCESSED_DATA_DIR, PROJECT_ROOT
 from paveiq.data_ingestion.ward_boundaries import load_wards
 
 POOR_SCORE_THRESHOLD = 40
 
+# Bundled fixed snapshot for the one Bengaluru neighborhood (Koramangala)
+# committed to the repo — see README "Demo dataset". data/processed/ is
+# gitignored, so a fresh deploy (e.g. Streamlit Cloud) has nothing there;
+# this is the fallback that gives the deployed app something to show.
+DEMO_DATA_DIR = PROJECT_ROOT / "data" / "demo"
+
 
 def _find_latest_scored(processed_dir: Optional[Path] = None) -> Path:
-    """Return the newest ``*_scored.parquet`` in ``processed_dir``."""
+    """Return the newest ``*_scored.parquet``.
+
+    Looks in ``processed_dir`` (default: ``data/processed/``) first —
+    that's the real, freshly-scored output of a local pipeline run.
+    Only when ``processed_dir`` was *not* explicitly overridden and
+    nothing is found there does this fall back to the bundled demo
+    snapshot in ``data/demo/``, so local dev running the full pipeline
+    always sees its own output, while a deploy with an empty/gitignored
+    ``data/processed/`` still has something to display.
+    """
+    using_default = processed_dir is None
     processed_dir = Path(processed_dir) if processed_dir is not None else PROCESSED_DATA_DIR
-    if not processed_dir.exists():
-        raise FileNotFoundError(f"processed dir does not exist: {processed_dir}")
-    candidates = sorted(processed_dir.glob("*_scored.parquet"))
-    if not candidates:
-        raise FileNotFoundError(
-            f"no `*_scored.parquet` files in {processed_dir}; run scoring.score_city first"
-        )
-    return max(candidates, key=lambda p: p.stat().st_mtime)
+    candidates = sorted(processed_dir.glob("*_scored.parquet")) if processed_dir.exists() else []
+    if candidates:
+        return max(candidates, key=lambda p: p.stat().st_mtime)
+
+    if using_default and DEMO_DATA_DIR.exists():
+        demo_candidates = sorted(DEMO_DATA_DIR.glob("*_scored.parquet"))
+        if demo_candidates:
+            return max(demo_candidates, key=lambda p: p.stat().st_mtime)
+
+    searched = f"{processed_dir}" + (f" or {DEMO_DATA_DIR}" if using_default else "")
+    raise FileNotFoundError(f"no `*_scored.parquet` files in {searched}; run scoring.score_city first")
 
 
 def load_scored_segments(path: Optional[Path] = None) -> gpd.GeoDataFrame:

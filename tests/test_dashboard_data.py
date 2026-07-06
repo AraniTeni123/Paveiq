@@ -123,3 +123,57 @@ def test_load_scored_segments_reads_explicit_path(tmp_path):
     loaded = dd.load_scored_segments(path)
     assert len(loaded) == 4
     assert "score" in loaded.columns
+
+
+# --- demo-dir fallback -------------------------------------------------
+
+
+def test_find_latest_scored_falls_back_to_demo_when_processed_empty(tmp_path, monkeypatch):
+    empty_processed = tmp_path / "processed"
+    empty_processed.mkdir()
+    demo_dir = tmp_path / "demo"
+    demo_dir.mkdir()
+    demo_file = demo_dir / "demo_scored.parquet"
+    demo_file.write_text("")
+
+    monkeypatch.setattr(dd, "PROCESSED_DATA_DIR", empty_processed)
+    monkeypatch.setattr(dd, "DEMO_DATA_DIR", demo_dir)
+
+    assert dd._find_latest_scored() == demo_file
+
+
+def test_find_latest_scored_prefers_processed_over_demo(tmp_path, monkeypatch):
+    processed_dir = tmp_path / "processed"
+    processed_dir.mkdir()
+    real_file = processed_dir / "real_scored.parquet"
+    real_file.write_text("")
+    demo_dir = tmp_path / "demo"
+    demo_dir.mkdir()
+    (demo_dir / "demo_scored.parquet").write_text("")
+
+    monkeypatch.setattr(dd, "PROCESSED_DATA_DIR", processed_dir)
+    monkeypatch.setattr(dd, "DEMO_DATA_DIR", demo_dir)
+
+    assert dd._find_latest_scored() == real_file
+
+
+def test_find_latest_scored_raises_when_both_missing(tmp_path, monkeypatch):
+    monkeypatch.setattr(dd, "PROCESSED_DATA_DIR", tmp_path / "no_processed")
+    monkeypatch.setattr(dd, "DEMO_DATA_DIR", tmp_path / "no_demo")
+    with pytest.raises(FileNotFoundError, match="scored.parquet"):
+        dd._find_latest_scored()
+
+
+def test_find_latest_scored_explicit_dir_does_not_fall_back_to_demo(tmp_path, monkeypatch):
+    """An explicitly-passed processed_dir (as tests use) must never silently
+    fall back to the real demo dir — only the no-argument default path does."""
+    empty_processed = tmp_path / "processed"
+    empty_processed.mkdir()
+    demo_dir = tmp_path / "demo"
+    demo_dir.mkdir()
+    (demo_dir / "demo_scored.parquet").write_text("")
+
+    monkeypatch.setattr(dd, "DEMO_DATA_DIR", demo_dir)
+
+    with pytest.raises(FileNotFoundError, match="scored.parquet"):
+        dd._find_latest_scored(empty_processed)
