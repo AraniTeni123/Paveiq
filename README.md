@@ -19,11 +19,13 @@ paveiq/
 ├── src/paveiq/         # Main pipeline package
 │   ├── data_ingestion/ # Pull and normalize raw geospatial data
 │   ├── features/       # Feature engineering over rasters, vectors, network
-│   ├── models/         # Training, evaluation, persistence
-│   └── scoring/        # Apply model to new areas, produce maps
+│   ├── models/         # Scorer training, evaluation, persistence
+│   ├── scoring/        # Apply the scorer to new areas, produce maps
+│   └── dashboard/      # Streamlit app: 3D map, ward leaderboard, what-if panel
 ├── data/
 │   ├── raw/            # Original downloaded data (gitignored)
 │   └── processed/      # Pipeline output (gitignored)
+├── artifacts/          # Serialized scorer artifacts (gitignored)
 ├── notebooks/          # Exploration, ad-hoc analysis
 ├── tests/              # Unit and integration tests
 ├── requirements.txt
@@ -32,16 +34,18 @@ paveiq/
 
 ## Pipeline overview
 
-The pipeline has four stages, run in order. Each stage reads from the previous stage's output and writes to `data/processed/`.
+The pipeline runs in stages, each reading the previous stage's output and writing to `data/processed/`.
 
-1. **Data ingestion** — fetch OpenStreetMap footpath geometries, ward/BBMP boundaries, raster layers (e.g., NDVI, impervious-surface), and any available citizen reports. Normalize to a common CRS and schema.
-2. **Feature engineering** — for each footpath segment, compute features: length, width (where mappable), nearby amenity density, road class, vegetation proximity, surface type, etc.
-3. **Modeling** — train a regression or classifier on labeled segments (citizen reports + field verification) to predict a 0–100 health score.
-4. **Scoring** — apply the trained model to the full city network; output a scored GeoPackage / GeoJSON for use in QGIS, kepler.gl, or a simple web map.
+1. **Data ingestion** — fetch OpenStreetMap footpath geometries and BBMP ward boundaries. Normalize to a common CRS and schema.
+2. **Feature engineering** — for each footpath segment, compute features: length, width (where mappable), highway-likelihood, surface quality, sidewalk presence.
+3. **Ward join** — spatial-join each segment to its BBMP ward via a representative-point join.
+4. **Scoring model** — no labeled citizen-report/field-verification data exists yet, so scoring currently runs on a transparent heuristic (a weighted combination of the engineered features, see `models/heuristic.py`) rather than a trained regression/classifier. It's built behind the same `predict(df) -> score` interface a trained model would expose, so swapping one in once labels exist requires no changes to the scoring stage or the dashboard.
+5. **Scoring** — apply the scorer to the full city network; output a scored Parquet.
+6. **Dashboard** — a Streamlit app (3D pydeck map, ward leaderboard, what-if simulator) reads the scored Parquet directly.
 
 ## Status
 
-Early stage. The directory structure and package skeleton are in place; data sources, schemas, and the first baseline model are next.
+The ingestion → features → ward-join → scoring pipeline runs end-to-end, and a Streamlit dashboard sits on top of it. No labeled footpath-condition data (citizen reports / field verification) exists yet, so scoring uses a transparent heuristic rather than a trained model — see `models/heuristic.py` for the interface a future trained model would drop into.
 
 ## Setup
 
@@ -99,12 +103,20 @@ python -m paveiq.features.build_features
 # DataMeet 2022 ward GeoJSON on first run, then caches it).
 python -m paveiq.data_ingestion.ward_boundaries
 
-# Stages 4-6 (not yet implemented):
+# Stage 4: build the scorer artifact (heuristic for now — see Status above).
 python -m paveiq.models.train
+
+# Stage 5: apply the scorer to the full network.
 python -m paveiq.scoring.score_city
+
+# Stage 6: explore the results in the dashboard.
+# streamlit/pydeck are an optional dep: pip install -e ".[dashboard]"
+streamlit run src/paveiq/dashboard/app.py
 ```
 
-`data/raw/` gets the OSM GeoJSON and the cached BBMP wards; `data/processed/` gets the per-segment feature Parquet and the `*_with_wards.parquet`.
+`data/raw/` gets the OSM GeoJSON and the cached BBMP wards; `data/processed/` gets the
+per-segment feature Parquet, the `*_with_wards.parquet`, and the `*_scored.parquet`;
+`artifacts/` gets the scorer artifact.
 
 ## Data sources (planned)
 
