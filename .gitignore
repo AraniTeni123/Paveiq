@@ -42,7 +42,8 @@ data/processed/*
 *.pt
 *.pth
 /models/
-/artifacts/
+/artifacts/*
+!/artifacts/demo/
 /checkpoints/
 
 # OSMnx response cache (downloaded Overpass payloads)

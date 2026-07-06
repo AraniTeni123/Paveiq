@@ -14,7 +14,7 @@ from typing import Optional
 import geopandas as gpd
 import pandas as pd
 
-from paveiq.config import PROCESSED_DATA_DIR, PROJECT_ROOT
+from paveiq.config import ARTIFACTS_DIR, PROCESSED_DATA_DIR, PROJECT_ROOT
 from paveiq.data_ingestion.ward_boundaries import load_wards
 
 POOR_SCORE_THRESHOLD = 40
@@ -24,6 +24,11 @@ POOR_SCORE_THRESHOLD = 40
 # gitignored, so a fresh deploy (e.g. Streamlit Cloud) has nothing there;
 # this is the fallback that gives the deployed app something to show.
 DEMO_DATA_DIR = PROJECT_ROOT / "data" / "demo"
+
+# Same idea for the scorer artifact: artifacts/ is gitignored too, so a
+# fresh deploy has no trained/heuristic scorer for the what-if panel to
+# call. artifacts/demo/ bundles the artifact matching the demo dataset.
+DEMO_ARTIFACTS_DIR = PROJECT_ROOT / "artifacts" / "demo"
 
 
 def _find_latest_scored(processed_dir: Optional[Path] = None) -> Path:
@@ -50,6 +55,30 @@ def _find_latest_scored(processed_dir: Optional[Path] = None) -> Path:
 
     searched = f"{processed_dir}" + (f" or {DEMO_DATA_DIR}" if using_default else "")
     raise FileNotFoundError(f"no `*_scored.parquet` files in {searched}; run scoring.score_city first")
+
+
+def _find_latest_artifact(artifacts_dir: Optional[Path] = None) -> Path:
+    """Return the newest ``*_scorer*.json``.
+
+    Same fallback rule as ``_find_latest_scored``: looks in
+    ``artifacts_dir`` (default: ``artifacts/``) first, and only falls
+    back to the bundled demo artifact in ``artifacts/demo/`` when
+    ``artifacts_dir`` was *not* explicitly overridden and nothing is
+    found there.
+    """
+    using_default = artifacts_dir is None
+    artifacts_dir = Path(artifacts_dir) if artifacts_dir is not None else ARTIFACTS_DIR
+    candidates = sorted(artifacts_dir.glob("*_scorer*.json")) if artifacts_dir.exists() else []
+    if candidates:
+        return max(candidates, key=lambda p: p.stat().st_mtime)
+
+    if using_default and DEMO_ARTIFACTS_DIR.exists():
+        demo_candidates = sorted(DEMO_ARTIFACTS_DIR.glob("*_scorer*.json"))
+        if demo_candidates:
+            return max(demo_candidates, key=lambda p: p.stat().st_mtime)
+
+    searched = f"{artifacts_dir}" + (f" or {DEMO_ARTIFACTS_DIR}" if using_default else "")
+    raise FileNotFoundError(f"no scorer artifact in {searched}; run `python -m paveiq.models.train` first")
 
 
 def load_scored_segments(path: Optional[Path] = None) -> gpd.GeoDataFrame:

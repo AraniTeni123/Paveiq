@@ -177,3 +177,57 @@ def test_find_latest_scored_explicit_dir_does_not_fall_back_to_demo(tmp_path, mo
 
     with pytest.raises(FileNotFoundError, match="scored.parquet"):
         dd._find_latest_scored(empty_processed)
+
+
+# --- artifact demo-dir fallback (mirrors _find_latest_scored above) --------
+
+
+def test_find_latest_artifact_falls_back_to_demo_when_artifacts_empty(tmp_path, monkeypatch):
+    empty_artifacts = tmp_path / "artifacts"
+    empty_artifacts.mkdir()
+    demo_dir = tmp_path / "artifacts_demo"
+    demo_dir.mkdir()
+    demo_file = demo_dir / "heuristic_scorer_v1.json"
+    demo_file.write_text("{}")
+
+    monkeypatch.setattr(dd, "ARTIFACTS_DIR", empty_artifacts)
+    monkeypatch.setattr(dd, "DEMO_ARTIFACTS_DIR", demo_dir)
+
+    assert dd._find_latest_artifact() == demo_file
+
+
+def test_find_latest_artifact_prefers_artifacts_over_demo(tmp_path, monkeypatch):
+    artifacts_dir = tmp_path / "artifacts"
+    artifacts_dir.mkdir()
+    real_file = artifacts_dir / "heuristic_scorer_v1.json"
+    real_file.write_text("{}")
+    demo_dir = tmp_path / "artifacts_demo"
+    demo_dir.mkdir()
+    (demo_dir / "heuristic_scorer_v1.json").write_text("{}")
+
+    monkeypatch.setattr(dd, "ARTIFACTS_DIR", artifacts_dir)
+    monkeypatch.setattr(dd, "DEMO_ARTIFACTS_DIR", demo_dir)
+
+    assert dd._find_latest_artifact() == real_file
+
+
+def test_find_latest_artifact_raises_when_both_missing(tmp_path, monkeypatch):
+    monkeypatch.setattr(dd, "ARTIFACTS_DIR", tmp_path / "no_artifacts")
+    monkeypatch.setattr(dd, "DEMO_ARTIFACTS_DIR", tmp_path / "no_demo")
+    with pytest.raises(FileNotFoundError, match="scorer artifact"):
+        dd._find_latest_artifact()
+
+
+def test_find_latest_artifact_explicit_dir_does_not_fall_back_to_demo(tmp_path, monkeypatch):
+    """Same rule as the scored-Parquet fallback: an explicitly-passed
+    artifacts_dir must never silently fall back to the real demo dir."""
+    empty_artifacts = tmp_path / "artifacts"
+    empty_artifacts.mkdir()
+    demo_dir = tmp_path / "artifacts_demo"
+    demo_dir.mkdir()
+    (demo_dir / "heuristic_scorer_v1.json").write_text("{}")
+
+    monkeypatch.setattr(dd, "DEMO_ARTIFACTS_DIR", demo_dir)
+
+    with pytest.raises(FileNotFoundError, match="scorer artifact"):
+        dd._find_latest_artifact(empty_artifacts)

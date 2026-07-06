@@ -1,0 +1,21 @@
+{
+  "model_type": "heuristic_v1",
+  "score_min": 0,
+  "score_max": 100,
+  "weights": {
+    "surface_quality": 0.35,
+    "sidewalk_presence": 0.3,
+    "width_m": 0.15,
+    "highway_likelihood": 0.2
+  },
+  "sidewalk_score_map": {
+    "explicit_present": 1.0,
+    "implicit_present": 0.9,
+    "likely_present": 0.5,
+    "unlikely": 0.2,
+    "explicit_absent": 0.0
+  },
+  "width_score_min_m": 0.5,
+  "width_score_max_m": 2.0,
+  "neutral_impute": 0.5
+}

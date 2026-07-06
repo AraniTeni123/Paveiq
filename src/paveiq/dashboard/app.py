@@ -12,23 +12,12 @@ Run with::
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import streamlit as st
 
-from paveiq.config import ARTIFACTS_DIR
 from paveiq.dashboard import data, mapview, whatif
 from paveiq.models.registry import load_scorer
 
 st.set_page_config(page_title="PaveIQ", page_icon="\U0001f6b6", layout="wide")
-
-
-def _find_latest_artifact() -> Path:
-    """Return the newest ``*_scorer*.json`` in ``artifacts/``."""
-    candidates = sorted(ARTIFACTS_DIR.glob("*_scorer*.json"))
-    if not candidates:
-        raise FileNotFoundError(f"no scorer artifact in {ARTIFACTS_DIR}; run `python -m paveiq.models.train` first")
-    return max(candidates, key=lambda p: p.stat().st_mtime)
 
 
 @st.cache_data
@@ -43,7 +32,7 @@ def _load_wards():
 
 @st.cache_resource
 def _load_scorer():
-    return load_scorer(_find_latest_artifact())
+    return load_scorer(data._find_latest_artifact())
 
 
 SURFACE_UPGRADE_OPTIONS = {"Compacted (0.6)": 0.6, "Paved (1.0)": 1.0}
