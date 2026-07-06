@@ -1,5 +1,8 @@
 # PaveIQ
 
+[![CI](https://github.com/AraniTeni123/Paveiq/actions/workflows/ci.yml/badge.svg)](https://github.com/AraniTeni123/Paveiq/actions/workflows/ci.yml)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
+
 **Predictive footpath health scoring for Bengaluru, built with geospatial data and machine learning.**
 
 PaveIQ is a project for [Bengawalk](https://bengawalk.org), a Bengaluru-based urban walkability organization. The goal is to score and predict the condition of footpaths (sidewalks) across the city using open geospatial data, street imagery features, and ML — so that advocacy, repair prioritization, and citizen reporting can be data-driven.
