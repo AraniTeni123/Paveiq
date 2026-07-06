@@ -126,12 +126,17 @@ def build_ward_choropleth_layer(ward_gdf_with_scores: gpd.GeoDataFrame) -> pdk.L
     )
 
 
-def make_deck(layers, view_state: pdk.ViewState = None, tooltip=None) -> pdk.Deck:
-    """Assemble a ``pdk.Deck`` on the CARTO basemap (no Mapbox token needed)."""
+def make_deck(layers, view_state: pdk.ViewState = None, map_style=None, tooltip=None) -> pdk.Deck:
+    """Assemble a ``pdk.Deck`` on the CARTO basemap (no Mapbox token needed).
+
+    ``map_style`` defaults to the light CARTO tiles; pass e.g.
+    ``pdk.map_styles.CARTO_DARK`` for a dark basemap (both are free,
+    same ``map_provider="carto"``, no Mapbox token either way).
+    """
     return pdk.Deck(
         layers=list(layers),
         initial_view_state=view_state or BENGALURU_VIEW_STATE,
         map_provider="carto",
-        map_style=pdk.map_styles.LIGHT,
+        map_style=map_style or pdk.map_styles.LIGHT,
         tooltip=tooltip if tooltip is not None else True,
     )

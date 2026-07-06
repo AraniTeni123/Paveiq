@@ -2,8 +2,10 @@
 
 Thin UI glue only — every function with real logic lives in
 ``data.py``/``mapview.py``/``whatif.py`` and is unit-tested there.
-This module wires them to Streamlit widgets across three tabs: a 3D
-map, a ward-level leaderboard, and a what-if simulator.
+``theme.py`` supplies the dark palette and HTML/CSS card builders. This
+module wires them to Streamlit widgets: a sidebar for navigation and
+always-visible key stats, and a main area for whichever view is active
+(3D map, ward leaderboard, what-if simulator).
 
 Run with::
 
@@ -12,12 +14,15 @@ Run with::
 
 from __future__ import annotations
 
+import pydeck as pdk
 import streamlit as st
 
-from paveiq.dashboard import data, mapview, whatif
+from paveiq.dashboard import data, mapview, theme, whatif
 from paveiq.models.registry import load_scorer
 
 st.set_page_config(page_title="PaveIQ", page_icon="\U0001f6b6", layout="wide")
+
+VIEWS = ("Map", "Ward Leaderboard", "What-if")
 
 
 @st.cache_data
@@ -37,6 +42,77 @@ def _load_scorer():
 
 SURFACE_UPGRADE_OPTIONS = {"Compacted (0.6)": 0.6, "Paved (1.0)": 1.0}
 WHOLE_WARD_LABEL = "Whole ward (bulk-simulate)"
+
+
+def _score_status(score: float) -> str:
+    """"good"/"bad" card coloring for a mean score, split at the scale midpoint."""
+    return "good" if score >= theme.GOOD_SCORE_THRESHOLD else "bad"
+
+
+def render_sidebar(scored, ward_summary_df) -> str:
+    """Sidebar: wordmark, nav, and the three always-visible key stats.
+
+    Returns the selected view name.
+    """
+    with st.sidebar:
+        st.markdown('<div class="pq-wordmark">\U0001f6b6 PaveIQ</div>', unsafe_allow_html=True)
+        view = st.radio("Navigate", VIEWS, label_visibility="collapsed")
+
+        st.markdown(
+            theme.metric_card_html("Segments", f"{len(scored):,}", status="neutral"),
+            unsafe_allow_html=True,
+        )
+        mean_score = scored["score"].mean()
+        st.markdown(
+            theme.metric_card_html(
+                "Mean score", f"{mean_score:.1f}", status=_score_status(mean_score)
+            ),
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            theme.metric_card_html(
+                "Wards", f"{ward_summary_df['ward_id'].nunique()}", status="neutral"
+            ),
+            unsafe_allow_html=True,
+        )
+    return view
+
+
+def render_header_cards(scored, ward_summary_df) -> None:
+    """The 4-card horizontal row: segments, mean score, wards, worst ward."""
+    worst_ward = ward_summary_df.iloc[0]
+    mean_score = scored["score"].mean()
+
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
+        st.markdown(
+            theme.metric_card_html("Segments", f"{len(scored):,}", status="neutral"),
+            unsafe_allow_html=True,
+        )
+    with c2:
+        st.markdown(
+            theme.metric_card_html(
+                "Mean score", f"{mean_score:.1f}", status=_score_status(mean_score)
+            ),
+            unsafe_allow_html=True,
+        )
+    with c3:
+        st.markdown(
+            theme.metric_card_html(
+                "Wards", f"{ward_summary_df['ward_id'].nunique()}", status="neutral"
+            ),
+            unsafe_allow_html=True,
+        )
+    with c4:
+        st.markdown(
+            theme.metric_card_html(
+                "Worst ward",
+                f"{worst_ward['mean_score']:.1f}",
+                status="bad",
+                sublabel=str(worst_ward["ward_name"]),
+            ),
+            unsafe_allow_html=True,
+        )
 
 
 def render_map_tab(scored, wards, ward_summary_df):
@@ -63,6 +139,7 @@ def render_map_tab(scored, wards, ward_summary_df):
         st.pydeck_chart(
             mapview.make_deck(
                 layers,
+                map_style=pdk.map_styles.CARTO_DARK,
                 tooltip={"html": "<b>{highway}</b><br/>Score: {score}"},
             )
         )
@@ -70,11 +147,22 @@ def render_map_tab(scored, wards, ward_summary_df):
 
 def render_leaderboard_tab(scored, ward_summary_df):
     st.subheader("Ward leaderboard (worst first)")
-    st.dataframe(ward_summary_df, width="stretch")
+    st.dataframe(
+        ward_summary_df.style.background_gradient(
+            cmap=theme.SCORE_GRADIENT_CMAP, subset=["mean_score"], vmin=0, vmax=100
+        ).format({"mean_score": "{:.1f}", "pct_poor": "{:.1f}", "total_length_m": "{:.0f}"}),
+        width="stretch",
+    )
 
     st.subheader("Worst individual segments")
     n = st.slider("Number of segments to show", 5, 100, 20, step=5)
-    st.dataframe(data.leaderboard(scored, n=n), width="stretch")
+    worst_segments = data.leaderboard(scored, n=n)
+    st.dataframe(
+        worst_segments.style.background_gradient(
+            cmap=theme.SCORE_GRADIENT_CMAP, subset=["score"], vmin=0, vmax=100
+        ).format({"score": "{:.1f}", "length_m": "{:.0f}"}),
+        width="stretch",
+    )
 
 
 def render_whatif_tab(scored, ward_summary_df, scorer):
@@ -126,17 +214,18 @@ def render_whatif_tab(scored, ward_summary_df, scorer):
     before_mean = scorer.predict(original).mean()
     after_mean = scorer.predict(modified).mean()
 
-    st.metric(
-        "Score" if scope == "segment" else "Mean ward score",
-        f"{after_mean:.1f}",
-        delta=f"{after_mean - before_mean:+.1f}",
+    label = "Score" if scope == "segment" else "Mean ward score"
+    st.markdown(
+        theme.before_after_card_html(label, before_mean, after_mean),
+        unsafe_allow_html=True,
     )
+    st.write("")
     for toggle_name, n_affected in affected.items():
         st.caption(f"{toggle_name}: {n_affected} of {len(original)} segments affected")
 
 
 def main():
-    st.title("PaveIQ — Footpath Health Dashboard")
+    st.markdown(theme.inject_global_css(), unsafe_allow_html=True)
 
     try:
         scored = _load_segments()
@@ -148,18 +237,17 @@ def main():
         return
 
     ward_summary_df = data.ward_summary(scored)
+    view = render_sidebar(scored, ward_summary_df)
 
-    st.caption(
-        f"{len(scored):,} segments · city-wide mean score {scored['score'].mean():.1f} "
-        f"· {ward_summary_df['ward_id'].nunique()} wards"
-    )
+    st.title("PaveIQ — Footpath Health Dashboard")
+    render_header_cards(scored, ward_summary_df)
+    st.write("")
 
-    tab_map, tab_leaderboard, tab_whatif = st.tabs(["Map", "Ward Leaderboard", "What-if"])
-    with tab_map:
+    if view == "Map":
         render_map_tab(scored, wards, ward_summary_df)
-    with tab_leaderboard:
+    elif view == "Ward Leaderboard":
         render_leaderboard_tab(scored, ward_summary_df)
-    with tab_whatif:
+    else:
         render_whatif_tab(scored, ward_summary_df, scorer)
 
 
