@@ -23,6 +23,7 @@ import json
 import geopandas as gpd
 import numpy as np
 import pydeck as pdk
+import shapely
 from matplotlib import colormaps
 
 from paveiq.dashboard.data import to_wgs84
@@ -30,6 +31,17 @@ from paveiq.dashboard.data import to_wgs84
 RIBBON_HALFWIDTH_M = 1.5
 MIN_ELEVATION_M = 2.0
 MAX_ELEVATION_M = 120.0
+
+# A real deploy hit a WebSocket message-size limit (~64 MiB) sending the
+# per-segment ribbon GeoJSON for ~22k segments: pydeck's to_json() always
+# pretty-prints with indent=2, and carrying every scored-table column
+# through as a GeoJSON property multiplies an already-large coordinate
+# payload (measured ~69 MB for this dataset). These two levers plus
+# trimming properties (in build_segment_layer) cut that to ~27 MB with no
+# visible fidelity loss at map-viewing scale:
+SEGMENT_SIMPLIFY_TOLERANCE_M = 1.0  # collapse near-collinear points on the source line
+COORDINATE_PRECISION_DEG = 1e-6  # ~11cm; ribbons are already 3m wide
+_SEGMENT_TOOLTIP_COLS = ("highway",)  # only carry through what the map tooltip needs
 
 BENGALURU_VIEW_STATE = pdk.ViewState(latitude=12.9716, longitude=77.5946, zoom=12, pitch=45)
 
@@ -60,9 +72,12 @@ def _buffer_to_ribbons(gdf: gpd.GeoDataFrame, halfwidth_m: float) -> gpd.GeoData
     """Buffer each (line) geometry into a flat-capped ribbon polygon.
 
     Must run before any reprojection to WGS84 — buffering in degrees
-    would make the ribbon width vary with latitude.
+    would make the ribbon width vary with latitude. ``join_style="mitre"``
+    (vs. shapely's default ``"round"``) avoids adding extra points at
+    each bend to approximate a circular arc — a real vertex-count saving
+    at city scale, invisible on a 3m-wide ribbon.
     """
-    return gdf.assign(geometry=gdf.buffer(halfwidth_m, cap_style="flat"))
+    return gdf.assign(geometry=gdf.buffer(halfwidth_m, cap_style="flat", join_style="mitre"))
 
 
 def build_segment_layer(
@@ -74,14 +89,24 @@ def build_segment_layer(
     """Build the extruded 3D segment-ribbon layer.
 
     ``scored_gdf`` must be in a metric CRS (e.g. ``EPSG:32643``) and
-    have a ``score`` column; any other columns are carried through as
-    GeoJSON properties (useful for tooltips).
+    have a ``score`` column. Only ``score`` and the tooltip columns in
+    ``_SEGMENT_TOOLTIP_COLS`` are carried through as GeoJSON properties
+    — see the module-level comment on ``SEGMENT_SIMPLIFY_TOLERANCE_M``
+    for why: at ~22k segments, the full scored table's payload is large
+    enough to exceed the browser's WebSocket message-size limit.
     """
     if "score" not in scored_gdf.columns:
         raise ValueError("scored_gdf must have a 'score' column")
 
-    ribbons = _buffer_to_ribbons(scored_gdf, ribbon_halfwidth_m)
+    tooltip_cols = [c for c in _SEGMENT_TOOLTIP_COLS if c in scored_gdf.columns]
+    trimmed = scored_gdf[["score", "geometry"] + tooltip_cols].copy()
+    trimmed["geometry"] = trimmed.geometry.simplify(SEGMENT_SIMPLIFY_TOLERANCE_M)
+
+    ribbons = _buffer_to_ribbons(trimmed, ribbon_halfwidth_m)
     ribbons_wgs84 = to_wgs84(ribbons)
+    ribbons_wgs84 = ribbons_wgs84.set_geometry(
+        shapely.set_precision(ribbons_wgs84.geometry.values, grid_size=COORDINATE_PRECISION_DEG)
+    )
     scores = ribbons_wgs84["score"].to_numpy()
     ribbons_wgs84 = ribbons_wgs84.assign(
         elevation=score_to_elevation(scores, min_elevation_m, max_elevation_m),

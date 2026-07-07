@@ -89,6 +89,45 @@ def test_build_segment_layer_serializes_to_json():
     assert "layers" in payload
 
 
+def test_build_segment_layer_trims_to_score_and_tooltip_columns_only():
+    """Regression guard: a real deploy hit a WebSocket message-size limit
+    because every scored-table column (17 of them) was carried through as a
+    GeoJSON property for ~22k segments. Only score + highway (what the map
+    tooltip uses) should survive into the output properties."""
+    gdf = gpd.GeoDataFrame(
+        {
+            "osmid": ["1", "2"],
+            "highway": ["footway", "residential"],
+            "score": [20.0, 90.0],
+            "ward_name": ["Alpha", "Beta"],  # should NOT survive
+            "sidewalk_presence": ["explicit_present", "unlikely"],  # should NOT survive
+            "geometry": [LineString([(0, 0), (0, 100)]), LineString([(50, 0), (50, 100)])],
+        },
+        crs="EPSG:32643",
+    )
+    layer = mv.build_segment_layer(gdf)
+    props = layer.data["features"][0]["properties"]
+    assert "score" in props
+    assert "highway" in props
+    assert "elevation" in props
+    assert "fill_color" in props
+    assert "osmid" not in props
+    assert "ward_name" not in props
+    assert "sidewalk_presence" not in props
+
+
+def test_build_segment_layer_simplifies_many_collinear_points():
+    """A line with many redundant near-collinear points (like real OSM
+    digitization) should end up with far fewer vertices after buffering,
+    thanks to simplify() + the mitre join — this is the actual size fix."""
+    dense_line = LineString([(0, y) for y in range(0, 101)])  # 101 collinear points
+    gdf = gpd.GeoDataFrame({"score": [50.0], "geometry": [dense_line]}, crs="EPSG:32643")
+    layer = mv.build_segment_layer(gdf)
+    ribbon_coords = layer.data["features"][0]["geometry"]["coordinates"][0]
+    # A straight ribbon needs only ~4-5 corners, not 101+ per side.
+    assert len(ribbon_coords) < 20
+
+
 def test_build_segment_layer_raises_without_score_column():
     gdf = gpd.GeoDataFrame(
         {"geometry": [LineString([(0, 0), (0, 1)])]}, crs="EPSG:32643"
