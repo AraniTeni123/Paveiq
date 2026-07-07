@@ -7,6 +7,8 @@
 
 PaveIQ is a project for [Bengawalk](https://bengawalk.org), a Bengaluru-based urban walkability organization. The goal is to score and predict the condition of footpaths (sidewalks) across the city using open geospatial data, street imagery features, and ML — so that advocacy, repair prioritization, and citizen reporting can be data-driven.
 
+For the *why* behind the design decisions below — OSM data-source choices, feature-engineering tradeoffs, the heuristic-vs-trained-model call, the ward-join methodology, real bugs caught along the way, and the dashboard's visual design — see **[docs/METHODOLOGY.md](docs/METHODOLOGY.md)**.
+
 ## Why this exists
 
 Bengaluru's footpaths are uneven, broken, encroached, or simply missing. Manual surveys don't scale across thousands of kilometers of road network. PaveIQ builds a **footpath health score** from publicly available geospatial signals (OpenStreetMap, satellite/raster features, BBMP / ward boundaries, citizen reports) so that:
