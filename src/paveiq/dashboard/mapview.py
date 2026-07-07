@@ -41,7 +41,19 @@ MAX_ELEVATION_M = 120.0
 # visible fidelity loss at map-viewing scale:
 SEGMENT_SIMPLIFY_TOLERANCE_M = 1.0  # collapse near-collinear points on the source line
 COORDINATE_PRECISION_DEG = 1e-6  # ~11cm; ribbons are already 3m wide
-_SEGMENT_TOOLTIP_COLS = ("highway",)  # only carry through what the map tooltip needs
+
+# Raw columns pulled in only to *derive* human-readable tooltip fields below
+# (the raw ordinal/tag values themselves don't survive into the output
+# properties -- see build_segment_layer).
+_SEGMENT_TOOLTIP_INPUT_COLS = ("highway", "surface_quality")
+
+# Same 3-tier mapping build_features.surface_quality() encodes, inverted for
+# display. Cast to float64 + round before mapping: surface_quality is stored
+# as float32, and a raw float32(0.6)/float32(0.2) can hash differently from
+# the Python float literal below even though `==` says they're equal --
+# a dict-based .map() silently misses and returns NaN for every row that
+# isn't exactly 1.0 unless the dtype is normalized first.
+_SURFACE_QUALITY_LABELS = {1.0: "Paved", 0.6: "Compacted", 0.2: "Unpaved"}
 
 BENGALURU_VIEW_STATE = pdk.ViewState(latitude=12.9716, longitude=77.5946, zoom=12, pitch=45)
 
@@ -89,18 +101,27 @@ def build_segment_layer(
     """Build the extruded 3D segment-ribbon layer.
 
     ``scored_gdf`` must be in a metric CRS (e.g. ``EPSG:32643``) and
-    have a ``score`` column. Only ``score`` and the tooltip columns in
-    ``_SEGMENT_TOOLTIP_COLS`` are carried through as GeoJSON properties
-    — see the module-level comment on ``SEGMENT_SIMPLIFY_TOLERANCE_M``
-    for why: at ~22k segments, the full scored table's payload is large
-    enough to exceed the browser's WebSocket message-size limit.
+    have a ``score`` column. Only ``score`` (rounded to 1 decimal for
+    display) and human-readable tooltip fields derived from
+    ``_SEGMENT_TOOLTIP_INPUT_COLS`` (``highway_label``, ``surface_label``)
+    are carried through as GeoJSON properties — see the module-level
+    comment on ``SEGMENT_SIMPLIFY_TOLERANCE_M`` for why: at ~22k
+    segments, the full scored table's payload is large enough to
+    exceed the browser's WebSocket message-size limit.
     """
     if "score" not in scored_gdf.columns:
         raise ValueError("scored_gdf must have a 'score' column")
 
-    tooltip_cols = [c for c in _SEGMENT_TOOLTIP_COLS if c in scored_gdf.columns]
-    trimmed = scored_gdf[["score", "geometry"] + tooltip_cols].copy()
+    input_cols = [c for c in _SEGMENT_TOOLTIP_INPUT_COLS if c in scored_gdf.columns]
+    trimmed = scored_gdf[["score", "geometry"] + input_cols].copy()
     trimmed["geometry"] = trimmed.geometry.simplify(SEGMENT_SIMPLIFY_TOLERANCE_M)
+
+    if "highway" in trimmed.columns:
+        trimmed["highway_label"] = trimmed.pop("highway").fillna("Unknown")
+    if "surface_quality" in trimmed.columns:
+        trimmed["surface_label"] = (
+            trimmed.pop("surface_quality").astype("float64").round(1).map(_SURFACE_QUALITY_LABELS).fillna("Unknown")
+        )
 
     ribbons = _buffer_to_ribbons(trimmed, ribbon_halfwidth_m)
     ribbons_wgs84 = to_wgs84(ribbons)
@@ -109,6 +130,7 @@ def build_segment_layer(
     )
     scores = ribbons_wgs84["score"].to_numpy()
     ribbons_wgs84 = ribbons_wgs84.assign(
+        score=np.round(scores, 1),
         elevation=score_to_elevation(scores, min_elevation_m, max_elevation_m),
         fill_color=[c.tolist() for c in score_to_rgba(scores)],
     )

@@ -90,10 +90,45 @@ def test_inject_global_css_includes_font_import():
     assert "JetBrains+Mono" in css
 
 
+def test_inject_global_css_includes_display_font_import_and_header_rule():
+    css = theme.inject_global_css()
+    assert "Space+Grotesk" in css
+    assert theme.FONT_DISPLAY in css
+    # Headers and mono numbers must be different font stacks -- that's the point.
+    assert theme.FONT_DISPLAY != theme.FONT_MONO
+
+
 def test_inject_global_css_includes_palette_hex_values():
     css = theme.inject_global_css()
     for hex_color in (theme.BG, theme.SURFACE, theme.ACCENT, theme.GOOD, theme.BAD):
         assert hex_color in css
+
+
+# --- map_legend_html / insight_card_html -----------------------------------
+
+
+def test_map_legend_html_explains_height_and_color_encoding():
+    html = theme.map_legend_html()
+    assert "pq-legend" in html
+    assert "Poor" in html and "Good" in html
+    assert "Height" in html
+
+
+def test_legend_swatch_css_gradient_uses_score_gradient_colors():
+    """The swatch's gradient (defined in the CSS rule, not the HTML snippet
+    itself) should be sampled from SCORE_GRADIENT_CMAP, not a hardcoded
+    placeholder -- spot-check the reddest sampled stop appears."""
+    css = theme.inject_global_css()
+    reddest = "#%02x%02x%02x" % tuple(int(c * 255) for c in theme.SCORE_GRADIENT_CMAP(0.0)[:3])
+    assert reddest in css
+    assert "pq-legend-swatch" in css
+
+
+def test_insight_card_html_wraps_text_with_tag():
+    html = theme.insight_card_html("HAL Airport sits 11.8 points below the mean.")
+    assert "pq-insight" in html
+    assert "HAL Airport sits 11.8 points below the mean." in html
+    assert "Insight" in html
 
 
 # --- SCORE_GRADIENT_CMAP ---------------------------------------------------

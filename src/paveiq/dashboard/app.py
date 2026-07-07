@@ -17,7 +17,7 @@ from __future__ import annotations
 import pydeck as pdk
 import streamlit as st
 
-from paveiq.dashboard import data, mapview, theme, whatif
+from paveiq.dashboard import data, insights, mapview, theme, whatif
 from paveiq.models.registry import load_scorer
 
 st.set_page_config(page_title="PaveIQ", page_icon="\U0001f6b6", layout="wide")
@@ -114,6 +114,11 @@ def render_header_cards(scored, ward_summary_df) -> None:
             unsafe_allow_html=True,
         )
 
+    st.markdown(
+        theme.insight_card_html(insights.header_insight(scored, ward_summary_df)),
+        unsafe_allow_html=True,
+    )
+
 
 def render_map_tab(scored, wards, ward_summary_df):
     col_controls, col_map = st.columns([1, 3])
@@ -126,7 +131,6 @@ def render_map_tab(scored, wards, ward_summary_df):
             step=10,
         )
         show_wards = st.checkbox("Overlay ward choropleth", value=False)
-        st.caption("Height = worse score → taller. Color: red (poor) → green (good).")
 
     layers = [mapview.build_segment_layer(scored, max_elevation_m=max_elevation)]
     if show_wards:
@@ -136,17 +140,28 @@ def render_map_tab(scored, wards, ward_summary_df):
         layers.append(mapview.build_ward_choropleth_layer(wards_with_scores))
 
     with col_map:
+        st.markdown(theme.map_legend_html(), unsafe_allow_html=True)
         st.pydeck_chart(
             mapview.make_deck(
                 layers,
                 map_style=pdk.map_styles.CARTO_DARK,
-                tooltip={"html": "<b>{highway}</b><br/>Score: {score}"},
+                tooltip={
+                    "html": (
+                        "<b>{highway_label}</b><br/>"
+                        "Surface: {surface_label}<br/>"
+                        "Score: {score}"
+                    )
+                },
             )
         )
 
 
 def render_leaderboard_tab(scored, ward_summary_df):
     st.subheader("Ward leaderboard (worst first)")
+    st.markdown(
+        theme.insight_card_html(insights.leaderboard_insight(ward_summary_df)),
+        unsafe_allow_html=True,
+    )
     st.dataframe(
         ward_summary_df.style.background_gradient(
             cmap=theme.SCORE_GRADIENT_CMAP, subset=["mean_score"], vmin=0, vmax=100
@@ -222,6 +237,28 @@ def render_whatif_tab(scored, ward_summary_df, scorer):
     st.write("")
     for toggle_name, n_affected in affected.items():
         st.caption(f"{toggle_name}: {n_affected} of {len(original)} segments affected")
+
+    # modified's `score` column is still the pre-toggle value -- apply_hypothetical
+    # only changes the raw feature columns. Recompute it before merging back into
+    # the full table, or the rank comparison below would silently compare against
+    # stale scores.
+    modified_scored = modified.copy()
+    modified_scored["score"] = scorer.predict(modified)
+    full_modified = scored.copy()
+    full_modified.loc[modified_scored.index, modified_scored.columns] = modified_scored
+    if scope == "ward":
+        before_rank = insights.ward_rank(ward_summary_df, target)
+        after_rank = insights.ward_rank(data.ward_summary(full_modified), target)
+        rank_text = insights.rank_change_insight(
+            ward_labels[target], "ward", before_rank, after_rank, total=len(ward_summary_df)
+        )
+    else:
+        before_rank = insights.segment_rank(scored, target)
+        after_rank = insights.segment_rank(full_modified, target)
+        rank_text = insights.rank_change_insight(
+            f"segment {target}", "segment", before_rank, after_rank, total=len(scored)
+        )
+    st.markdown(theme.insight_card_html(rank_text), unsafe_allow_html=True)
 
 
 def main():

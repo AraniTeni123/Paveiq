@@ -92,12 +92,13 @@ def test_build_segment_layer_serializes_to_json():
 def test_build_segment_layer_trims_to_score_and_tooltip_columns_only():
     """Regression guard: a real deploy hit a WebSocket message-size limit
     because every scored-table column (17 of them) was carried through as a
-    GeoJSON property for ~22k segments. Only score + highway (what the map
-    tooltip uses) should survive into the output properties."""
+    GeoJSON property for ~22k segments. Only score + the derived tooltip
+    labels (not the raw highway/surface_quality inputs) should survive."""
     gdf = gpd.GeoDataFrame(
         {
             "osmid": ["1", "2"],
             "highway": ["footway", "residential"],
+            "surface_quality": [1.0, 0.6],
             "score": [20.0, 90.0],
             "ward_name": ["Alpha", "Beta"],  # should NOT survive
             "sidewalk_presence": ["explicit_present", "unlikely"],  # should NOT survive
@@ -108,12 +109,53 @@ def test_build_segment_layer_trims_to_score_and_tooltip_columns_only():
     layer = mv.build_segment_layer(gdf)
     props = layer.data["features"][0]["properties"]
     assert "score" in props
-    assert "highway" in props
+    assert "highway_label" in props
+    assert "surface_label" in props
     assert "elevation" in props
     assert "fill_color" in props
     assert "osmid" not in props
+    assert "highway" not in props
+    assert "surface_quality" not in props
     assert "ward_name" not in props
     assert "sidewalk_presence" not in props
+
+
+def test_build_segment_layer_surface_label_handles_float32_precision():
+    """Regression guard: surface_quality is stored as float32 upstream, and a
+    naive dict-based .map() on the raw dtype silently drops every row that
+    isn't exactly 1.0 (0.6/0.2 hash differently from the Python float
+    literals despite `==` succeeding) -- must cast to float64 first."""
+    gdf = gpd.GeoDataFrame(
+        {
+            "score": [50.0, 50.0, 50.0, 50.0],
+            "surface_quality": np.array([1.0, 0.6, 0.2, np.nan], dtype="float32"),
+            "geometry": [LineString([(i, 0), (i, 10)]) for i in range(4)],
+        },
+        crs="EPSG:32643",
+    )
+    layer = mv.build_segment_layer(gdf)
+    labels = [f["properties"]["surface_label"] for f in layer.data["features"]]
+    assert labels == ["Paved", "Compacted", "Unpaved", "Unknown"]
+
+
+def test_build_segment_layer_rounds_score_for_display():
+    gdf = gpd.GeoDataFrame(
+        {"score": [56.9421], "geometry": [LineString([(0, 0), (0, 10)])]}, crs="EPSG:32643"
+    )
+    layer = mv.build_segment_layer(gdf)
+    assert layer.data["features"][0]["properties"]["score"] == 56.9
+
+
+def test_build_segment_layer_missing_tooltip_inputs_degrades_gracefully():
+    """Fixtures/data without highway or surface_quality shouldn't error --
+    just skip the corresponding label."""
+    gdf = gpd.GeoDataFrame(
+        {"score": [50.0], "geometry": [LineString([(0, 0), (0, 10)])]}, crs="EPSG:32643"
+    )
+    layer = mv.build_segment_layer(gdf)
+    props = layer.data["features"][0]["properties"]
+    assert "highway_label" not in props
+    assert "surface_label" not in props
 
 
 def test_build_segment_layer_simplifies_many_collinear_points():
