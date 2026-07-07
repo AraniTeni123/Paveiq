@@ -333,3 +333,5 @@ precisely because the basemap provider was already CARTO, not Mapbox.
 the module docstrings in `src/paveiq/` for the most current, code-adjacent
 version of this reasoning — this file is the narrative; the docstrings are the
 source of truth if they ever diverge.*
+
+*See the [README's Acknowledgements](../README.md#acknowledgements) for project authorship.*
