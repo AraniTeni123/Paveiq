@@ -171,4 +171,4 @@ TBD — to be decided with Bengawalk.
 
 ## Acknowledgements
 
-The project concept, research direction, and all design decisions and parameters are by Arani Mahapatra. Implementation was assisted by Claude Code and MiniMax (via Ollama) as AI coding assistants.
+Project concept and design by Arani Mahapatra.
